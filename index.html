@@ -152,8 +152,14 @@
                 setIsSaving(true);
                 // Lọc bỏ những cặp trống hoàn toàn (giữ lại các cặp đặc biệt '\n' để ngắt dòng)
                 const validPairs = pairs.filter(p => p.vi.trim() !== '' || p.en.trim() !== '' || p.vi === '\n');
-                await onSave(questionId, { fullAnswer, pairs: validPairs });
+                
+                const success = await onSave(questionId, { fullAnswer, pairs: validPairs });
+                
                 setIsSaving(false);
+                // Nếu lưu Database thành công (hoặc ít nhất không bị crash), mới đóng form
+                if(success !== false) {
+                    onCancel(true); // Trả cờ true về báo đã lưu
+                }
             };
 
             return (
@@ -257,7 +263,7 @@
                     </div>
 
                     <div className="flex gap-3 justify-end mt-6 pt-4 border-t border-slate-100">
-                        <button onClick={onCancel} className="px-5 py-2.5 text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg font-medium transition-colors">Hủy</button>
+                        <button onClick={() => onCancel(false)} className="px-5 py-2.5 text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg font-medium transition-colors">Hủy</button>
                         <button onClick={handleSave} disabled={isSaving} className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-medium flex items-center gap-2 disabled:opacity-50 transition-colors shadow-sm">
                             {isSaving ? <Loader className="w-4 h-4" /> : <Save className="w-4 h-4" />}
                             {isSaving ? 'Đang lưu...' : 'Lưu Database'}
@@ -272,14 +278,19 @@
             const [isEditing, setIsEditing] = useState(false);
             const [showEnglish, setShowEnglish] = useState(false);
 
-            const handleSave = async (id, data) => {
-                await onSave(id, data);
-                setIsEditing(false);
-                setShowEnglish(true); // Tự động mở tiếng Anh sau khi lưu để xem kết quả
-            };
-
             if (isEditing) {
-                return <VocabEditor questionId={questionId} questionText={questionText} initialData={customData} onSave={handleSave} onCancel={() => setIsEditing(false)} />;
+                return (
+                    <VocabEditor 
+                        questionId={questionId} 
+                        questionText={questionText} 
+                        initialData={customData} 
+                        onSave={onSave} 
+                        onCancel={(wasSaved) => {
+                            setIsEditing(false);
+                            if(wasSaved) setShowEnglish(true); // Tự động mở tiếng Anh sau khi lưu thành công
+                        }} 
+                    />
+                );
             }
 
             // Nếu câu hỏi đã có dữ liệu tùy chỉnh (Vocab)
@@ -359,16 +370,7 @@
           const [fetchStatus, setFetchStatus] = useState({ success: false, message: '' });
 
           // Lưu trạng thái Vocab tuỳ chỉnh
-          const [customVocabs, setCustomVocabs] = useState(() => {
-              const stored = {};
-              for (let i = 0; i < localStorage.length; i++) {
-                  const key = localStorage.key(i);
-                  if (key && key.startsWith('vocab_')) {
-                      try { stored[key.replace('vocab_', '')] = JSON.parse(localStorage.getItem(key)); } catch(e){}
-                  }
-              }
-              return stored;
-          });
+          const [customVocabs, setCustomVocabs] = useState({});
 
           const [selectedTopicPart1, setSelectedTopicPart1] = useState(null);
           const [selectedTopicPart2, setSelectedTopicPart2] = useState(null);
@@ -391,11 +393,12 @@
 
           // Hàm lưu Vocab lên Google Sheets
           const handleSaveVocab = async (questionId, vocabData) => {
+              // Cập nhật tạm thời cho UI nhanh nhẹn
               setCustomVocabs(prev => ({ ...prev, [questionId]: vocabData }));
               localStorage.setItem(`vocab_${questionId}`, JSON.stringify(vocabData));
 
               try {
-                  await fetch(APP_SCRIPT_URL, {
+                  const response = await fetch(APP_SCRIPT_URL, {
                       method: 'POST',
                       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
                       body: JSON.stringify({
@@ -405,8 +408,17 @@
                           pairs: vocabData.pairs
                       })
                   });
+                  
+                  const result = await response.json();
+                  if (!result.success) {
+                      alert("Google Sheets từ chối lưu: " + (result.message || "Lỗi không xác định"));
+                      return false; // Trả về false để form không tự động đóng
+                  }
+                  return true;
               } catch (err) {
                   console.error('Lỗi khi lưu Vocab lên Cloud:', err);
+                  alert("Không thể lưu vào Database đám mây! Vui lòng đảm bảo bạn đã cấp quyền 'Anyone' (Bất kỳ ai) khi Deploy Apps Script. Lỗi này khiến người khác không thấy được đáp án của bạn trên Github.");
+                  return false; // Trả về false
               }
           };
 
@@ -416,25 +428,26 @@
             const fetchInitialData = async () => {
               setLoading(true);
               
+              // TẢI DATA TỪ DATABASE TRƯỚC TIÊN (AWAIT)
               try {
-                fetch(`${APP_SCRIPT_URL}?action=getNotes`)
-                  .then(res => res.json())
-                  .then(json => {
-                    if (json.success && json.data) {
-                      Object.keys(json.data).forEach(id => localStorage.setItem(`note_${id}`, json.data[id]));
-                    }
-                  }).catch(() => {});
+                const notesRes = await fetch(`${APP_SCRIPT_URL}?action=getNotes`);
+                const notesJson = await notesRes.json();
+                if (notesJson.success && notesJson.data) {
+                    Object.keys(notesJson.data).forEach(id => localStorage.setItem(`note_${id}`, notesJson.data[id]));
+                }
+              } catch(e) { console.warn("Không lấy được Notes từ Database:", e); }
 
-                fetch(`${APP_SCRIPT_URL}?action=getVocab`)
-                  .then(res => res.json())
-                  .then(json => {
-                    if (json.success && json.data) {
-                      setCustomVocabs(json.data);
-                      Object.keys(json.data).forEach(id => localStorage.setItem(`vocab_${id}`, JSON.stringify(json.data[id])));
-                    }
-                  }).catch(() => {});
-              } catch(e) {}
+              try {
+                const vocabRes = await fetch(`${APP_SCRIPT_URL}?action=getVocab`);
+                const vocabJson = await vocabRes.json();
+                if (vocabJson.success && vocabJson.data) {
+                    setCustomVocabs(vocabJson.data);
+                    // Đồng bộ lại local storage cho an toàn
+                    Object.keys(vocabJson.data).forEach(id => localStorage.setItem(`vocab_${id}`, JSON.stringify(vocabJson.data[id])));
+                }
+              } catch(e) { console.warn("Không lấy được Vocab từ Database:", e); }
 
+              // SAU ĐÓ TẢI CÂU HỎI TỪ GOOGLE SHEET
               try {
                 const fetchSheet = async (sheetName) => {
                   const url = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=${sheetName}`;
@@ -519,7 +532,7 @@
                 ]);
 
                 setData({ part1: part1Data, part2: part2Data, part3: part3Data });
-                setFetchStatus({ success: true, message: 'Đã tải dữ liệu thành công từ Google Sheets!' });
+                setFetchStatus({ success: true, message: 'Đã tải và đồng bộ toàn bộ dữ liệu thành công!' });
               } catch (error) {
                 setFetchStatus({ success: false, message: 'Không thể truy cập Google Sheets hoặc bị lỗi định dạng.' });
               } finally {
@@ -571,8 +584,9 @@
                 </div>
 
                 {loading ? (
-                  <div className="flex justify-center items-center py-20">
-                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                  <div className="flex flex-col justify-center items-center py-20 gap-4">
+                    <div className="animate-spin rounded-full h-10 w-10 border-b-4 border-blue-600"></div>
+                    <p className="text-slate-500 font-medium animate-pulse">Đang đồng bộ Database từ đám mây...</p>
                   </div>
                 ) : (
                   <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden min-h-[500px]">
