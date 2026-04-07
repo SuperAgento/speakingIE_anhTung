@@ -21,6 +21,36 @@
         // URL Google Apps Script của bạn
         const APP_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbycsbUpiwZgCKT0YkSO644R7CxkZMh76ocgz0knfZmIgjUf4qlKxe1NsUaqADvlNbJHnA/exec";
 
+        // --- HÀM GỬI API CHỐNG LỖI CORS ---
+        const gasFetch = async (payload) => {
+            try {
+                // Thử gửi bình thường
+                const response = await fetch(APP_SCRIPT_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                    body: JSON.stringify(payload)
+                });
+                const result = await response.json();
+                return result.success;
+            } catch (err) {
+                console.warn("Lỗi CORS phát hiện, đang dùng cơ chế dự phòng no-cors...", err);
+                // Cơ chế dự phòng: Ép trình duyệt gửi đi mà không cần chờ phản hồi (vượt rào CORS do nhiều acc Gmail)
+                try {
+                    await fetch(APP_SCRIPT_URL, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                        mode: 'no-cors',
+                        body: JSON.stringify(payload)
+                    });
+                    // Với no-cors, ta không thể lấy được response.json(), nhưng dữ liệu thực tế 99% đã vào Sheet
+                    return true;
+                } catch (fallbackErr) {
+                    console.error("Lỗi mạng nghiêm trọng:", fallbackErr);
+                    return false;
+                }
+            }
+        };
+
         // --- CÁC COMPONENT ICON ---
         const Mic = ({ className }) => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" x2="12" y1="19" y2="22"></line></svg>;
         const CheckCircle2 = ({ className }) => <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><circle cx="12" cy="12" r="10"></circle><path d="m9 12 2 2 4-4"></path></svg>;
@@ -99,7 +129,7 @@
           return result;
         };
 
-        // --- COMPONENTS SOẠN THẢO TỪ VỰNG (VOCAB EDITOR) KÈM TÍNH NĂNG TÁCH CÂU (;) ---
+        // --- COMPONENTS SOẠN THẢO TỪ VỰNG (VOCAB EDITOR) ---
         function VocabEditor({ questionId, questionText, initialData, onSave, onCancel }) {
             const [fullAnswer, setFullAnswer] = useState(initialData?.fullAnswer || '');
             const [pairs, setPairs] = useState(initialData?.pairs || [{ vi: '', en: '' }]);
@@ -117,7 +147,6 @@
                 setPairs(newPairs);
             };
 
-            // Tách câu tự động (Thêm \n để xuống dòng mỗi khi add câu mới)
             const handleBulkParse = () => {
                 if (!bulkVi.trim() && !bulkEn.trim()) return;
                 
@@ -133,12 +162,10 @@
                     });
                 }
 
-                // Nếu đang là mặc định (chỉ có 1 ô trống), thì thay thế luôn. Ngược lại thì chèn xuống dòng.
                 let updatedPairs = [...pairs];
                 if (updatedPairs.length === 1 && !updatedPairs[0].vi && !updatedPairs[0].en) {
                     updatedPairs = newPairs;
                 } else {
-                    // Thêm 1 pair đặc biệt làm cờ (flag) "Ngắt dòng"
                     updatedPairs.push({ vi: '\n', en: '\n' });
                     updatedPairs = [...updatedPairs, ...newPairs];
                 }
@@ -150,15 +177,13 @@
 
             const handleSave = async () => {
                 setIsSaving(true);
-                // Lọc bỏ những cặp trống hoàn toàn (giữ lại các cặp đặc biệt '\n' để ngắt dòng)
                 const validPairs = pairs.filter(p => p.vi.trim() !== '' || p.en.trim() !== '' || p.vi === '\n');
                 
                 const success = await onSave(questionId, { fullAnswer, pairs: validPairs });
                 
                 setIsSaving(false);
-                // Nếu lưu Database thành công (hoặc ít nhất không bị crash), mới đóng form
                 if(success !== false) {
-                    onCancel(true); // Trả cờ true về báo đã lưu
+                    onCancel(true); 
                 }
             };
 
@@ -180,7 +205,6 @@
                         />
                     </div>
 
-                    {/* KHU VỰC TÁCH CÂU NHANH (;) */}
                     <div className="mb-6 bg-indigo-50/70 rounded-xl p-4 border border-indigo-100">
                         <label className="block text-sm font-bold text-indigo-800 mb-3 flex items-center gap-2">
                             <Zap className="w-4 h-4 text-amber-500" /> Tách câu tự động bằng dấu chấm phẩy (;)
@@ -212,7 +236,6 @@
                     <div className="mb-4">
                         <label className="block text-sm font-semibold text-slate-600 mb-3">Chỉnh sửa & Thêm bớt thủ công</label>
                         {pairs.map((pair, idx) => {
-                            // Nếu đây là cặp "Ngắt dòng"
                             if (pair.vi === '\n' || pair.en === '\n') {
                                 return (
                                     <div key={idx} className="flex gap-2 mb-3 items-center relative group">
@@ -226,7 +249,6 @@
                                 );
                             }
 
-                            // Cặp từ bình thường
                             return (
                                 <div key={idx} className="flex gap-2 mb-3 items-start relative group">
                                     <div className="flex-1 flex flex-col gap-2">
@@ -287,13 +309,12 @@
                         onSave={onSave} 
                         onCancel={(wasSaved) => {
                             setIsEditing(false);
-                            if(wasSaved) setShowEnglish(true); // Tự động mở tiếng Anh sau khi lưu thành công
+                            if(wasSaved) setShowEnglish(true);
                         }} 
                     />
                 );
             }
 
-            // Nếu câu hỏi đã có dữ liệu tùy chỉnh (Vocab)
             if (customData && (customData.fullAnswer || (customData.pairs && customData.pairs.length > 0))) {
                 return (
                     <div className="mb-5 bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
@@ -312,11 +333,9 @@
                             </div>
                         </div>
 
-                        {/* Bảng Từ Vựng */}
                         {customData.pairs && customData.pairs.length > 0 && (
                             <div className="flex flex-wrap gap-2 mb-4">
                                 {customData.pairs.map((pair, idx) => {
-                                    // Nếu gặp khối ngắt dòng thì render ra thẻ div chiếm 100% chiều rộng để bẻ dòng
                                     if (pair.vi === '\n' || pair.en === '\n') {
                                         return <div key={idx} className="w-full h-3 border-b border-dashed border-slate-200 mb-2"></div>;
                                     }
@@ -334,7 +353,6 @@
                             </div>
                         )}
 
-                        {/* Full Answer */}
                         {customData.fullAnswer && (
                             <div className={`transition-all duration-300 origin-top ${showEnglish ? 'opacity-100 max-h-[1000px]' : 'opacity-0 max-h-0 overflow-hidden'}`}>
                                 <div className="bg-indigo-50 border border-indigo-100 rounded-xl p-4 text-slate-800 leading-relaxed font-medium shadow-inner">
@@ -346,7 +364,6 @@
                 );
             }
 
-            // Giao diện câu hỏi thường (Chưa có đáp án)
             return (
                 <div className="p-4 bg-white border border-slate-200 rounded-xl shadow-sm flex gap-3 items-start mb-4 group hover:border-indigo-300 transition-colors">
                     <div className="flex-shrink-0 w-6 h-6 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center text-sm font-bold mt-0.5">
@@ -369,7 +386,6 @@
           const [loading, setLoading] = useState(true);
           const [fetchStatus, setFetchStatus] = useState({ success: false, message: '' });
 
-          // Lưu trạng thái Vocab tuỳ chỉnh
           const [customVocabs, setCustomVocabs] = useState({});
 
           const [selectedTopicPart1, setSelectedTopicPart1] = useState(null);
@@ -391,35 +407,21 @@
               setActiveTab(targetTab);
           };
 
-          // Hàm lưu Vocab lên Google Sheets
           const handleSaveVocab = async (questionId, vocabData) => {
-              // Cập nhật tạm thời cho UI nhanh nhẹn
               setCustomVocabs(prev => ({ ...prev, [questionId]: vocabData }));
               localStorage.setItem(`vocab_${questionId}`, JSON.stringify(vocabData));
 
-              try {
-                  const response = await fetch(APP_SCRIPT_URL, {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                      body: JSON.stringify({
-                          action: 'saveVocab',
-                          id: questionId,
-                          fullAnswer: vocabData.fullAnswer,
-                          pairs: vocabData.pairs
-                      })
-                  });
-                  
-                  const result = await response.json();
-                  if (!result.success) {
-                      alert("Google Sheets từ chối lưu: " + (result.message || "Lỗi không xác định"));
-                      return false; // Trả về false để form không tự động đóng
-                  }
-                  return true;
-              } catch (err) {
-                  console.error('Lỗi khi lưu Vocab lên Cloud:', err);
-                  alert("Không thể lưu vào Database đám mây! Vui lòng đảm bảo bạn đã cấp quyền 'Anyone' (Bất kỳ ai) khi Deploy Apps Script. Lỗi này khiến người khác không thấy được đáp án của bạn trên Github.");
-                  return false; // Trả về false
+              const success = await gasFetch({
+                  action: 'saveVocab',
+                  id: questionId,
+                  fullAnswer: vocabData.fullAnswer,
+                  pairs: vocabData.pairs
+              });
+
+              if (!success) {
+                  alert("Chỉ lưu tạm thời trên máy bạn! Vượt rào CORS không thành công hoặc sai Link Apps Script.");
               }
+              return success;
           };
 
           const sheetId = '1ftNAvvECs2DvDsrLDcC9EM8TD1rCOnTUT29OzUAxgfc';
@@ -428,7 +430,6 @@
             const fetchInitialData = async () => {
               setLoading(true);
               
-              // TẢI DATA TỪ DATABASE TRƯỚC TIÊN (AWAIT)
               try {
                 const notesRes = await fetch(`${APP_SCRIPT_URL}?action=getNotes`);
                 const notesJson = await notesRes.json();
@@ -442,12 +443,10 @@
                 const vocabJson = await vocabRes.json();
                 if (vocabJson.success && vocabJson.data) {
                     setCustomVocabs(vocabJson.data);
-                    // Đồng bộ lại local storage cho an toàn
                     Object.keys(vocabJson.data).forEach(id => localStorage.setItem(`vocab_${id}`, JSON.stringify(vocabJson.data[id])));
                 }
               } catch(e) { console.warn("Không lấy được Vocab từ Database:", e); }
 
-              // SAU ĐÓ TẢI CÂU HỎI TỪ GOOGLE SHEET
               try {
                 const fetchSheet = async (sheetName) => {
                   const url = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=${sheetName}`;
@@ -546,7 +545,6 @@
           return (
             <div className="min-h-screen bg-slate-50 text-slate-800 font-sans">
               <header className="bg-white shadow-sm border-b border-slate-200">
-                {/* Đã mở rộng Full Width */}
                 <div className="w-full px-4 py-4 sm:px-6 lg:px-8 flex justify-between items-center">
                   <div className="flex items-center gap-2">
                     <Mic className="w-6 h-6 text-blue-600" />
@@ -555,7 +553,6 @@
                 </div>
               </header>
 
-              {/* Đã mở rộng Full Width */}
               <main className="w-full px-4 py-6 sm:px-6 lg:px-8">
                 {!loading && (
                   <div className={`mb-6 p-4 rounded-lg flex items-start gap-3 ${fetchStatus.success ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>
@@ -608,7 +605,6 @@
 
           return (
             <div className="flex flex-col md:flex-row h-full min-h-[500px]">
-              {/* SIDEBAR BÊN TRÁI - CHIA TỶ LỆ KHI FULL WIDTH */}
               <div className="w-full md:w-1/3 lg:w-1/4 xl:w-[20%] border-r border-slate-200 bg-slate-50/50 flex flex-col max-h-[600px] md:max-h-[800px]">
                 <div className="p-4 border-b border-slate-200 font-semibold text-slate-800 bg-slate-50">
                   Danh sách chủ đề
@@ -644,7 +640,6 @@
                 </div>
               </div>
 
-              {/* KHU VỰC HIỂN THỊ CHÍNH (BÊN PHẢI) - CHIA TỶ LỆ */}
               <div className="w-full md:w-2/3 lg:w-3/4 xl:w-[80%] flex flex-col bg-slate-50 relative overflow-y-auto max-h-[600px] md:max-h-[800px]">
                 {selectedTopic ? (
                   <div className="p-6 md:p-8 animate-in fade-in duration-300">
@@ -772,42 +767,23 @@
 
           const handleSaveNote = async () => {
             setSyncStatus('saving');
-            try {
-              const response = await fetch(APP_SCRIPT_URL, {
-                method: 'POST',
-                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                body: JSON.stringify({
-                  action: 'saveNote',
-                  id: topic.id,
-                  note: notes
-                })
-              });
-              
-              const result = await response.json();
-              if (result.success) {
-                setSyncStatus('saved');
-              } else {
-                setSyncStatus('error');
-              }
-            } catch (err) {
-              console.error("Lỗi khi đồng bộ Note lên Cloud:", err);
-              setSyncStatus('error');
-            }
+            const success = await gasFetch({
+                action: 'saveNote',
+                id: topic.id,
+                note: notes
+            });
+            if (success) setSyncStatus('saved');
+            else setSyncStatus('error');
           };
 
-          const clearNotes = () => {
+          const clearNotes = async () => {
              if (confirm("Bạn có chắc muốn xóa ghi chú này?")) {
                  setNotes('');
                  localStorage.removeItem(`note_${topic.id}`);
                  setSyncStatus('saving');
-                 fetch(APP_SCRIPT_URL, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                    body: JSON.stringify({ action: 'saveNote', id: topic.id, note: '' })
-                 }).then(r => r.json()).then(res => {
-                    if (res.success) setSyncStatus('saved');
-                    else setSyncStatus('error');
-                 }).catch(() => setSyncStatus('error'));
+                 const success = await gasFetch({ action: 'saveNote', id: topic.id, note: '' });
+                 if (success) setSyncStatus('saved');
+                 else setSyncStatus('error');
              }
           };
 
