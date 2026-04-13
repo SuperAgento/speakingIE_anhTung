@@ -21,33 +21,20 @@
         // URL Google Apps Script của bạn
         const APP_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbycsbUpiwZgCKT0YkSO644R7CxkZMh76ocgz0knfZmIgjUf4qlKxe1NsUaqADvlNbJHnA/exec";
 
-        // --- HÀM GỬI API CHỐNG LỖI CORS ---
+        // --- HÀM GỬI API CHUẨN (KHÔNG DÙNG NO-CORS ĐỂ TRÁNH BÁO CÁO GIẢ) ---
         const gasFetch = async (payload) => {
             try {
-                // Thử gửi bình thường
+                // Bỏ phần headers Content-Type để fetch tự động dùng text/plain. 
+                // Việc này giúp tránh bị trình duyệt chặn CORS Preflight (OPTIONS request).
                 const response = await fetch(APP_SCRIPT_URL, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
                     body: JSON.stringify(payload)
                 });
                 const result = await response.json();
                 return result.success;
             } catch (err) {
-                console.warn("Lỗi CORS phát hiện, đang dùng cơ chế dự phòng no-cors...", err);
-                // Cơ chế dự phòng: Ép trình duyệt gửi đi mà không cần chờ phản hồi (vượt rào CORS do nhiều acc Gmail)
-                try {
-                    await fetch(APP_SCRIPT_URL, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-                        mode: 'no-cors',
-                        body: JSON.stringify(payload)
-                    });
-                    // Với no-cors, ta không thể lấy được response.json(), nhưng dữ liệu thực tế 99% đã vào Sheet
-                    return true;
-                } catch (fallbackErr) {
-                    console.error("Lỗi mạng nghiêm trọng:", fallbackErr);
-                    return false;
-                }
+                console.error("Lỗi gửi dữ liệu lên Google Sheets:", err);
+                return false; // Trả về false để báo lỗi rõ ràng trên giao diện
             }
         };
 
@@ -76,22 +63,22 @@
         const MONTHLY_SCHEDULE = [
             { date: '07/04', day: 'Thứ 3', content: 'Part 1: Reading', targetTab: 'part1', keyword: 'Reading' },
             { date: '08/04', day: 'Thứ 4', content: 'Part 1: Life stages', targetTab: 'part1', keyword: 'Life stage' },
-            { date: '09/04', day: 'Thứ 5', content: 'Part 2: Planning', targetTab: 'part2', keyword: 'Planning' },
-            { date: '10/04', day: 'Thứ 6', content: 'Part 3: Planning', targetTab: 'part3', keyword: 'Planning' },
-            { date: '13/04', day: 'Thứ 2', content: 'Part 2: Expensive item', targetTab: 'part2', keyword: 'Expensive item' },
-            { date: '14/04', day: 'Thứ 3', content: 'Part 3: Consumerism', targetTab: 'part3', keyword: 'Consumerism' },
-            { date: '15/04', day: 'Thứ 4', content: 'Part 2: Problem solver', targetTab: 'part2', keyword: 'Problem solver' },
-            { date: '16/04', day: 'Thứ 5', content: 'Part 3: Problem-solving', targetTab: 'part3', keyword: 'Problem' },
-            { date: '17/04', day: 'Thứ 6', content: 'Part 2: Program/App', targetTab: 'part2', keyword: 'Program' },
-            { date: '20/04', day: 'Thứ 2', content: 'Part 3: Technology', targetTab: 'part3', keyword: 'Technology' },
-            { date: '21/04', day: 'Thứ 3', content: 'Part 2: Perfect job', targetTab: 'part2', keyword: 'Perfect job' },
-            { date: '22/04', day: 'Thứ 4', content: 'Part 3: Careers', targetTab: 'part3', keyword: 'Career' },
-            { date: '23/04', day: 'Thứ 5', content: 'Part 2: Tech piece', targetTab: 'part2', keyword: 'Tech piece' },
-            { date: '24/04', day: 'Thứ 6', content: 'Part 3: Tech Ethics', targetTab: 'part3', keyword: 'Ethics' },
-            { date: '27/04', day: 'Thứ 2', content: 'Part 2: Building', targetTab: 'part2', keyword: 'Building' },
-            { date: '28/04', day: 'Thứ 3', content: 'Part 3: Architecture', targetTab: 'part3', keyword: 'Architecture' },
-            { date: '29/04', day: 'Thứ 4', content: 'Part 2: Nature lover', targetTab: 'part2', keyword: 'Nature' },
-            { date: '30/04', day: 'Thứ 5', content: 'Part 3: Environment', targetTab: 'part3', keyword: 'Environment' }
+            { date: '09/04', day: 'Thứ 5', content: 'Part 2: Planning', targetTab: 'part2', keyword: 'planning' },
+            { date: '10/04', day: 'Thứ 6', content: 'Part 3: Planning', targetTab: 'part3', keyword: 'planning' },
+            { date: '13/04', day: 'Thứ 2', content: 'Part 2: Expensive item', targetTab: 'part2', keyword: 'spent more' },
+            { date: '14/04', day: 'Thứ 3', content: 'Part 3: Consumerism', targetTab: 'part3', keyword: 'spent more' },
+            { date: '15/04', day: 'Thứ 4', content: 'Part 2: Problem solver', targetTab: 'part2', keyword: 'solved a problem' },
+            { date: '16/04', day: 'Thứ 5', content: 'Part 3: Problem-solving', targetTab: 'part3', keyword: 'solved a problem' },
+            { date: '17/04', day: 'Thứ 6', content: 'Part 2: Program/App', targetTab: 'part2', keyword: 'program or app' },
+            { date: '20/04', day: 'Thứ 2', content: 'Part 3: Technology', targetTab: 'part3', keyword: 'program or app' },
+            { date: '21/04', day: 'Thứ 3', content: 'Part 2: Perfect job', targetTab: 'part2', keyword: 'perfect job' },
+            { date: '22/04', day: 'Thứ 4', content: 'Part 3: Careers', targetTab: 'part3', keyword: 'perfect job' },
+            { date: '23/04', day: 'Thứ 5', content: 'Part 2: Tech piece', targetTab: 'part2', keyword: 'piece of technology' },
+            { date: '24/04', day: 'Thứ 6', content: 'Part 3: Tech Ethics', targetTab: 'part3', keyword: 'piece of technology' },
+            { date: '27/04', day: 'Thứ 2', content: 'Part 2: Building', targetTab: 'part2', keyword: 'building' },
+            { date: '28/04', day: 'Thứ 3', content: 'Part 3: Architecture', targetTab: 'part3', keyword: 'building' },
+            { date: '29/04', day: 'Thứ 4', content: 'Part 2: Nature lover', targetTab: 'part2', keyword: 'natural world' },
+            { date: '30/04', day: 'Thứ 5', content: 'Part 3: Environment', targetTab: 'part3', keyword: 'natural world' }
         ];
 
         // --- TIỆN ÍCH PHÂN TÍCH CSV ---
@@ -182,6 +169,7 @@
                 const success = await onSave(questionId, { fullAnswer, pairs: validPairs });
                 
                 setIsSaving(false);
+                // CHỈ ĐÓNG FORM KHI API TRẢ VỀ SUCCESS (Lưu thành công thật sự)
                 if(success !== false) {
                     onCancel(true); 
                 }
@@ -400,7 +388,12 @@
               if (targetTab === 'part3') { list = data.part3; setter = setSelectedTopicPart3; }
 
               if (list.length > 0 && keyword) {
-                  const match = list.find(t => t.topic && t.topic.toLowerCase().includes(keyword.toLowerCase()));
+                  const match = list.find(t => 
+                      (t.topic && t.topic.toLowerCase().includes(keyword.toLowerCase())) ||
+                      (t.content && t.content.toLowerCase().includes(keyword.toLowerCase())) ||
+                      (t.question && t.question.toLowerCase().includes(keyword.toLowerCase())) ||
+                      (t.searchKey && t.searchKey.toLowerCase().includes(keyword.toLowerCase()))
+                  );
                   if (match) setter(match);
                   else setter(list[0] || null);
               }
@@ -408,6 +401,7 @@
           };
 
           const handleSaveVocab = async (questionId, vocabData) => {
+              // Lưu vào local trước để hiển thị nhanh
               setCustomVocabs(prev => ({ ...prev, [questionId]: vocabData }));
               localStorage.setItem(`vocab_${questionId}`, JSON.stringify(vocabData));
 
@@ -419,7 +413,7 @@
               });
 
               if (!success) {
-                  alert("Chỉ lưu tạm thời trên máy bạn! Vượt rào CORS không thành công hoặc sai Link Apps Script.");
+                  alert("LƯU THẤT BẠI! Bạn hãy chắc chắn đã tạo bản Deploy Mới (New Version) cho Apps Script nhé. Chừng nào nút 'Lưu Database' còn báo lỗi thì người khác sẽ không thấy được dữ liệu của bạn.");
               }
               return success;
           };
@@ -430,6 +424,7 @@
             const fetchInitialData = async () => {
               setLoading(true);
               
+              // 1. TẢI DATA TỪ DATABASE TRƯỚC TIÊN (AWAIT)
               try {
                 const notesRes = await fetch(`${APP_SCRIPT_URL}?action=getNotes`);
                 const notesJson = await notesRes.json();
@@ -441,12 +436,29 @@
               try {
                 const vocabRes = await fetch(`${APP_SCRIPT_URL}?action=getVocab`);
                 const vocabJson = await vocabRes.json();
-                if (vocabJson.success && vocabJson.data) {
-                    setCustomVocabs(vocabJson.data);
-                    Object.keys(vocabJson.data).forEach(id => localStorage.setItem(`vocab_${id}`, JSON.stringify(vocabJson.data[id])));
+                
+                // CHỈ GHI ĐÈ KHI CLOUD THỰC SỰ CÓ DỮ LIỆU ĐỂ BẢO VỆ DỮ LIỆU LOCAL
+                if (vocabJson.success && vocabJson.data && Object.keys(vocabJson.data).length > 0) {
+                    // Ưu tiên dữ liệu trên Cloud đè lên Local để đồng bộ máy tính mới
+                    setCustomVocabs(prev => {
+                        const merged = { ...prev, ...vocabJson.data };
+                        Object.keys(merged).forEach(id => localStorage.setItem(`vocab_${id}`, JSON.stringify(merged[id])));
+                        return merged;
+                    });
+                } else {
+                    // Nếu cloud trống, lấy từ Local Storage ra dùng tạm (chống mất do lỗi mạng/CORS cũ)
+                    const stored = {};
+                    for (let i = 0; i < localStorage.length; i++) {
+                        const key = localStorage.key(i);
+                        if (key && key.startsWith('vocab_')) {
+                            try { stored[key.replace('vocab_', '')] = JSON.parse(localStorage.getItem(key)); } catch(e){}
+                        }
+                    }
+                    setCustomVocabs(stored);
                 }
               } catch(e) { console.warn("Không lấy được Vocab từ Database:", e); }
 
+              // 2. SAU ĐÓ TẢI CÂU HỎI TỪ GOOGLE SHEET
               try {
                 const fetchSheet = async (sheetName) => {
                   const url = `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&sheet=${sheetName}`;
@@ -518,7 +530,8 @@
                           id: `${sheetName}-std-${index}`,
                           type: 'standard',
                           topic: topic,
-                          content: content
+                          content: content,
+                          searchKey: String(row[1] || '')
                         };
                       }).filter(item => item.topic && item.content);
                   }
